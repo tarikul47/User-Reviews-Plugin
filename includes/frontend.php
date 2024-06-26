@@ -3,20 +3,26 @@
 function urp_user_list_shortcode()
 {
     global $wpdb;
-    $users = $wpdb->get_results("SELECT u.id, u.name, AVG(r.rating) as avg_rating 
-                                 FROM {$wpdb->prefix}urp_custom_users u
-                                 LEFT JOIN {$wpdb->prefix}urp_custom_reviews r ON u.id = r.user_id AND r.status = 'approved'
-                                 GROUP BY u.id");
+
+    // Query to get users, their average ratings, and the count of approved reviews
+    $users = $wpdb->get_results("
+        SELECT u.id, u.name, COALESCE(AVG(r.rating), 0) as avg_rating, COUNT(r.id) as approved_review_count
+        FROM {$wpdb->prefix}urp_custom_users u
+        LEFT JOIN {$wpdb->prefix}urp_custom_reviews r 
+        ON u.id = r.user_id AND r.status = 'approved'
+        GROUP BY u.id
+    ");
 
     ob_start();
     echo '<h3>User List</h3>';
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<thead><tr><th>Name</th><th>Average Rating</th><th>Actions</th></tr></thead><tbody>';
+    echo '<thead><tr><th>Name</th><th>Average Rating</th><th>Approved Reviews</th><th>Actions</th></tr></thead><tbody>';
 
     foreach ($users as $user) {
         echo '<tr>';
         echo '<td>' . esc_html($user->name) . '</td>';
-        echo '<td>' . number_format(floatval($user->avg_rating), 2) . '</td>';
+        echo '<td>' . (is_null($user->avg_rating) ? 'No reviews yet' : number_format(floatval($user->avg_rating), 2)) . '</td>';
+        echo '<td>' . esc_html($user->approved_review_count) . '</td>';
         echo '<td><a href="' . esc_url(home_url('/user/' . esc_attr($user->id))) . '">View Details</a></td>';
         echo '</tr>';
     }
@@ -25,6 +31,7 @@ function urp_user_list_shortcode()
     return ob_get_clean();
 }
 add_shortcode('urp_user_list', 'urp_user_list_shortcode');
+
 
 // Shortcode to display single user details
 function urp_single_user_shortcode()
@@ -61,4 +68,3 @@ function urp_single_user_shortcode()
     return ob_get_clean();
 }
 add_shortcode('urp_single_user', 'urp_single_user_shortcode');
-?>

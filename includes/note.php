@@ -420,3 +420,4 @@ function urp_user_reviews_page()
         echo '<div class="wrap"><h2>No user selected</h2></div>';
     }
 }
+?>

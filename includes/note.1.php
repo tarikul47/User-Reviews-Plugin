@@ -161,7 +161,7 @@ function urp_add_user_page()
         $rating = intval($_POST['rating']);
 
         // Generate PDF from review content
-        $pdf_url = generate_pdf_from_person($name, $review_content, $rating);
+        $pdf_url = generate_or_append_pdf_from_review($name, $review_content, $rating);
 
         // Create downloadable product in WooCommerce
         $product_id = create_downloadable_product($name, $pdf_url);
@@ -279,7 +279,7 @@ function urp_review_list_page()
 }
 
 
-// Function to display approve reviews page
+// Example usage in urp_approve_reviews_page function:
 function urp_approve_reviews_page()
 {
     global $wpdb;
@@ -287,14 +287,7 @@ function urp_approve_reviews_page()
     // Check if a review is being approved
     if (isset($_POST['approve_review']) && isset($_POST['review_id'])) {
         $review_id = intval($_POST['review_id']);
-        $wpdb->update(
-            "{$wpdb->prefix}urp_custom_reviews",
-            array('status' => 'approved'),
-            array('id' => $review_id),
-            array('%s'),
-            array('%d')
-        );
-        echo '<div class="notice notice-success is-dismissible"><p>Review approved successfully!</p></div>';
+        approve_review_and_update_pdf($review_id);
     }
 
     // Get all pending reviews
@@ -323,37 +316,122 @@ function urp_approve_reviews_page()
     echo '</tbody></table></form></div>';
 }
 
-// Function to generate PDF from review content
-function generate_pdf_from_person($user_name, $review_content, $rating)
+
+// Function to approve reviews and update PDF
+function approve_review_and_update_pdf($review_id)
 {
+    global $wpdb;
+
+    // Fetch review details
+    $review = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE id = %d", $review_id));
+
+    if ($review) {
+        // Update review status to 'approved'
+        $wpdb->update(
+            "{$wpdb->prefix}urp_custom_reviews",
+            array('status' => 'approved'),
+            array('id' => $review_id),
+            array('%s'),
+            array('%d')
+        );
+
+        // Fetch user name for PDF
+        $user_name = $wpdb->get_var($wpdb->prepare("SELECT name FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $review->user_id));
+
+        // Generate or append the PDF
+        $pdf_url = generate_or_append_pdf_from_review($user_name, $review->review_content, $review->rating);
+
+        if ($pdf_url) {
+            // Ensure the product exists before updating
+            $product = wc_get_product($review->user_id);
+            if ($product) {
+                $downloadable_files = $product->get_downloads();
+                $downloadable_files[] = new WC_Product_Download(
+                    array(
+                        'name' => 'Review for ' . $user_name,
+                        'file' => $pdf_url
+                    )
+                );
+                $product->set_downloads($downloadable_files);
+                $product->save();
+
+                echo '<div class="notice notice-success is-dismissible"><p>Review approved and PDF updated successfully!</p></div>';
+            } else {
+                error_log('Product with ID ' . $review->user_id . ' not found.');
+                echo '<div class="notice notice-error is-dismissible"><p>Review approved but the product was not found. PDF was not updated.</p></div>';
+            }
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>Review approved but there was an error generating the PDF.</p></div>';
+        }
+    }
+}
+
+
+
+// Function to generate or append PDF from review content
+function generate_or_append_pdf_from_review($user_name, $review_content, $rating)
+{
+    global $wpdb;
+
     try {
-        $content = '<h1>Review for ' . $user_name . '</h1>';
-        $content .= '<p>Review Content: ' . esc_html($review_content) . '</p>';
-        $content .= '<p>Rating: ' . esc_html($rating) . '</p>';
+        // Get the upload directory path and URL
+        $upload_dir = wp_upload_dir();
+        $upload_path = $upload_dir['path']; // Use 'path' for the upload directory
+
+        // Ensure the upload directory exists
+        if (!file_exists($upload_path)) {
+            wp_mkdir_p($upload_path);
+        }
+
+        // Define PDF file name and path
+        $pdf_file_name = 'user_' . sanitize_title($user_name) . '_review.pdf';
+        $pdf_file_path = $upload_path . '/' . $pdf_file_name;
+
+        // Delete the existing PDF if it exists
+        if (file_exists($pdf_file_path)) {
+            unlink($pdf_file_path);
+        }
+
+        // Retrieve all approved reviews for the user
+        $reviews = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE user_id = %d AND status = 'approved'", $review->user_id));
+
+        // Prepare HTML content for PDF
+        $content = '<h1>Reviews for ' . esc_html($user_name) . '</h1>';
+        foreach ($reviews as $review) {
+            $content .= '<h2>Review by ' . esc_html($review->reviewer_name) . '</h2>';
+            $content .= '<p>Review Content: ' . esc_html($review->review_content) . '</p>';
+            $content .= '<p>Rating: ' . esc_html($review->rating) . '</p>';
+            $content .= '<hr>';
+        }
 
         // Generate PDF
         $mpdf = new \Mpdf\Mpdf();
         $mpdf->WriteHTML($content);
-
-        // Save PDF to server
-        $upload_dir = wp_upload_dir();
-        $pdf_file = $upload_dir['path'] . '/user_' . sanitize_title($user_name) . '_review.pdf';
-        $mpdf->Output($pdf_file, 'F');
+        $mpdf->Output($pdf_file_path, 'F');
 
         // Ensure the file has correct permissions
-        chmod($pdf_file, 0644);
+        chmod($pdf_file_path, 0644);
 
         // Check if the PDF file is correctly created
-        if (!file_exists($pdf_file) || filesize($pdf_file) == 0) {
+        if (!file_exists($pdf_file_path) || filesize($pdf_file_path) == 0) {
             throw new Exception('PDF file creation failed or the file is empty.');
         }
 
-        return $upload_dir['url'] . '/user_' . sanitize_title($user_name) . '_review.pdf';
+        // Convert the file path to a URL
+        $pdf_file_url = $upload_dir['url'] . '/' . $pdf_file_name;
+
+        // Debug output for verification
+        error_log('Generated PDF URL: ' . $pdf_file_url);
+
+        return $pdf_file_url;
+
     } catch (Exception $e) {
         error_log('Error generating PDF: ' . $e->getMessage());
         return false;
     }
 }
+
+
 
 // Function to create a downloadable product in WooCommerce
 function create_downloadable_product($user_name, $pdf_url)
@@ -420,3 +498,4 @@ function urp_user_reviews_page()
         echo '<div class="wrap"><h2>No user selected</h2></div>';
     }
 }
+?>
