@@ -160,11 +160,18 @@ function urp_add_user_page()
         $review_content = sanitize_textarea_field($_POST['review_content']);
         $rating = intval($_POST['rating']);
 
+        $content = '<h1>Reviews for ' . $name . '</h1>';
+        $content .= '<h2>Review by ' . esc_html(wp_get_current_user()->display_name) . '</h2>';
+        $content .= '<p>Review Content: ' . esc_html($review_content) . '</p>';
+        $content .= '<p>Rating: ' . esc_html($rating) . '</p>';
+        $content .= '<hr>';
+
+
         // Generate PDF from review content
-        $pdf_url = generate_pdf_from_person($name, $review_content, $rating);
+        $pdf_url = generate_product_pdf_from_person_review($name, $content);
 
         // Create downloadable product in WooCommerce
-        $product_id = create_downloadable_product($name, $pdf_url);
+        $product_id = create_or_update_downloadable_product($name, $pdf_url);
 
         // Insert user into the database with product ID
         $wpdb->insert(
@@ -287,16 +294,8 @@ function urp_approve_reviews_page()
     // Check if a review is being approved
     if (isset($_POST['approve_review']) && isset($_POST['review_id'])) {
         $review_id = intval($_POST['review_id']);
-        $wpdb->update(
-            "{$wpdb->prefix}urp_custom_reviews",
-            array('status' => 'approved'),
-            array('id' => $review_id),
-            array('%s'),
-            array('%d')
-        );
-        echo '<div class="notice notice-success is-dismissible"><p>Review approved successfully!</p></div>';
+        approve_review_and_update_pdf($review_id);
     }
-
     // Get all pending reviews
     $pending_reviews = $wpdb->get_results("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE status = 'pending'");
 
@@ -323,14 +322,65 @@ function urp_approve_reviews_page()
     echo '</tbody></table></form></div>';
 }
 
+// Function to approve reviews and update PDF
+function approve_review_and_update_pdf($review_id)
+{
+    global $wpdb;
+
+    // Fetch review details
+    $review = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE id = %d", $review_id));
+
+    if ($review) {
+        // Update review status to 'approved'
+        $wpdb->update(
+            "{$wpdb->prefix}urp_custom_reviews",
+            array('status' => 'approved'),
+            array('id' => $review_id),
+            array('%s'),
+            array('%d')
+        );
+
+        echo '<div class="notice notice-success is-dismissible"><p>Review approved successfully!</p></div>';
+
+        // Fetch user name and product ID
+        $user = $wpdb->get_row($wpdb->prepare("SELECT name, product_id FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $review->user_id));
+        $user_name = $user->name;
+        $product_id = $user->product_id;
+
+        // Retrieve all approved reviews for the user
+        $existing_reviews = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE user_id = %d AND status = 'approved'", $review->user_id));
+
+        $content = '<h1>Reviews for ' . $user_name . '</h1>';
+        foreach ($existing_reviews as $existing_review) {
+            $content .= '<h2>Review by ' . esc_html($existing_review->reviewer_name) . '</h2>';
+            $content .= '<p>Review Content: ' . esc_html($existing_review->review_content) . '</p>';
+            $content .= '<p>Rating: ' . esc_html($existing_review->rating) . '</p>';
+            $content .= '<hr>';
+        }
+
+        // Generate PDF
+        $pdf_url = generate_product_pdf_from_person_review($user_name, $content);
+
+        if ($pdf_url) {
+            // Use the create_or_update_downloadable_product function to update the existing product
+            $updated_product_id = create_or_update_downloadable_product($user_name, $pdf_url, $product_id);
+
+            if ($updated_product_id) {
+                echo '<div class="notice notice-success is-dismissible"><p>Review approved and PDF updated successfully!</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Review approved but there was an error updating the product with the new PDF.</p></div>';
+            }
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>Review approved but there was an error generating the PDF.</p></div>';
+        }
+    }
+}
+
+
 // Function to generate PDF from review content
-function generate_pdf_from_person($user_name, $review_content, $rating)
+function generate_product_pdf_from_person_review($user_name, $content)
 {
     try {
-        $content = '<h1>Review for ' . $user_name . '</h1>';
-        $content .= '<p>Review Content: ' . esc_html($review_content) . '</p>';
-        $content .= '<p>Rating: ' . esc_html($rating) . '</p>';
-
         // Generate PDF
         $mpdf = new \Mpdf\Mpdf();
         $mpdf->WriteHTML($content);
@@ -355,10 +405,22 @@ function generate_pdf_from_person($user_name, $review_content, $rating)
     }
 }
 
-// Function to create a downloadable product in WooCommerce
-function create_downloadable_product($user_name, $pdf_url)
+
+// Function to create or update a downloadable product in WooCommerce
+function create_or_update_downloadable_product($user_name, $pdf_url, $product_id = null)
 {
-    $product = new WC_Product();
+    if ($product_id) {
+        // If product ID is provided, update the existing product
+        $product = wc_get_product($product_id);
+        if (!$product) {
+            error_log('Product with ID ' . $product_id . ' not found.');
+            return false;
+        }
+    } else {
+        // If no product ID is provided, create a new product
+        $product = new WC_Product();
+    }
+
     $product->set_name('Review for ' . $user_name);
     $product->set_status('publish');
     $product->set_catalog_visibility('visible');
@@ -380,6 +442,7 @@ function create_downloadable_product($user_name, $pdf_url)
 
     return $product->get_id();
 }
+
 
 // Function to display reviews for a specific user
 function urp_user_reviews_page()
