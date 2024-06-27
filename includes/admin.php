@@ -7,6 +7,7 @@ function urp_admin_menu()
     add_submenu_page('user-reviews-plugin', 'Add User', 'Add User', 'manage_options', 'user-reviews-plugin-add-user', 'urp_add_user_page');
     add_submenu_page('user-reviews-plugin', 'Review List', 'Review List', 'manage_options', 'user-reviews-plugin-review-list', 'urp_review_list_page');
     add_submenu_page('user-reviews-plugin', 'Pending Reviews', 'Pending Reviews', 'manage_options', 'user-reviews-plugin-approve-reviews', 'urp_approve_reviews_page');
+    add_submenu_page('user-reviews-plugin', 'Import Users', 'Import Users', 'manage_options', 'user-reviews-plugin-import-users', 'urp_import_users_page');
     add_submenu_page('user-reviews-plugin', 'Edit User', '', 'manage_options', 'edit_user', 'urp_edit_user_page');
     add_submenu_page('user-reviews-plugin', 'User Reviews', '', 'manage_options', 'user_reviews', 'urp_user_reviews_page');
 }
@@ -494,4 +495,201 @@ function urp_user_reviews_page()
     } else {
         echo '<div class="wrap"><h2>No user selected</h2></div>';
     }
+}
+
+
+// Function to display import users page
+function urp_import_users_page()
+{
+    if (isset($_POST['upload_users'])) {
+        handle_user_file_upload();
+    }
+
+    ?>
+    <div class="wrap">
+        <h2>Import Users</h2>
+        <form method="post" enctype="multipart/form-data" action="">
+            <table class="form-table">
+                <tbody>
+                    <tr>
+                        <th scope="row"><label for="user_file">Upload File</label></th>
+                        <td>
+                            <input type="file" name="user_file" id="user_file" accept=".csv, .xls, .xlsx" required>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <input type="submit" name="upload_users" id="upload_users" class="button button-primary" value="Upload Users">
+        </form>
+    </div>
+    <?php
+}
+
+// Function to handle file upload and process user data
+function handle_user_file_upload()
+{
+    if (isset($_FILES['user_file']) && $_FILES['user_file']['error'] == 0) {
+        $file = $_FILES['user_file']['tmp_name'];
+        $file_type = $_FILES['user_file']['type'];
+
+        // Determine file extension and use appropriate parser
+        $extension = pathinfo($_FILES['user_file']['name'], PATHINFO_EXTENSION);
+        if ($extension == 'csv') {
+            process_csv_file($file);
+        } elseif (in_array($extension, array('xls', 'xlsx'))) {
+          //  process_excel_file($file);
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>Unsupported file type.</p></div>';
+        }
+    } else {
+        echo '<div class="notice notice-error is-dismissible"><p>File upload error.</p></div>';
+    }
+}
+
+// Function to process CSV file and add users
+function process_csv_file($file)
+{
+    global $wpdb;
+
+    if (($handle = fopen($file, "r")) !== FALSE) {
+        // Read the header row
+        $headers = fgetcsv($handle, 1000, ",");
+
+        // Loop through the file line-by-line
+        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+            $name = sanitize_text_field($data[0]);
+            $email = sanitize_email($data[1]);
+            $review_content = sanitize_textarea_field($data[2]);
+            $rating = intval($data[3]);
+
+            // Insert user into the database
+            $wpdb->insert(
+                "{$wpdb->prefix}urp_custom_users",
+                array(
+                    'name' => $name,
+                    'email' => $email,
+                    'product_id' => 0, // Placeholder until product is created
+                ),
+                array(
+                    '%s',
+                    '%s',
+                    '%d',
+                )
+            );
+
+            // Get the ID of the newly inserted user
+            $user_id = $wpdb->insert_id;
+
+            // Insert review into the database
+            $wpdb->insert(
+                "{$wpdb->prefix}urp_custom_reviews",
+                array(
+                    'user_id' => $user_id,
+                    'reviewer_name' => 'Admin', // Assuming admin is adding
+                    'review_content' => $review_content,
+                    'rating' => $rating,
+                    'status' => 'approved',
+                ),
+                array(
+                    '%d',
+                    '%s',
+                    '%s',
+                    '%d',
+                    '%s'
+                )
+            );
+
+            // Generate PDF from review content
+            $pdf_url = generate_product_pdf_from_person_review($name, $review_content, $rating);
+
+            // Create downloadable product in WooCommerce with the PDF URL
+            $product_id = create_or_update_downloadable_product($name, $pdf_url);
+
+            // Update user with the product ID
+            $wpdb->update(
+                "{$wpdb->prefix}urp_custom_users",
+                array('product_id' => $product_id),
+                array('id' => $user_id),
+                array('%d'),
+                array('%d')
+            );
+        }
+        fclose($handle);
+        echo '<div class="notice notice-success is-dismissible"><p>Users added successfully from CSV file.</p></div>';
+    } else {
+        echo '<div class="notice notice-error is-dismissible"><p>Unable to open CSV file.</p></div>';
+    }
+}
+
+// Function to process Excel file and add users
+function process_excel_file($file)
+{
+    global $wpdb;
+    require 'vendor/autoload.php';
+
+    $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file);
+    $sheet = $spreadsheet->getActiveSheet();
+
+    $rows = $sheet->toArray();
+    array_shift($rows); // Remove header row
+
+    foreach ($rows as $row) {
+        $name = sanitize_text_field($row[0]);
+        $email = sanitize_email($row[1]);
+        $review_content = sanitize_textarea_field($row[2]);
+        $rating = intval($row[3]);
+
+        // Insert user into the database
+        $wpdb->insert(
+            "{$wpdb->prefix}urp_custom_users",
+            array(
+                'name' => $name,
+                'email' => $email,
+                'product_id' => 0, // Placeholder until product is created
+            ),
+            array(
+                '%s',
+                '%s',
+                '%d',
+            )
+        );
+
+        // Get the ID of the newly inserted user
+        $user_id = $wpdb->insert_id;
+
+        // Insert review into the database
+        $wpdb->insert(
+            "{$wpdb->prefix}urp_custom_reviews",
+            array(
+                'user_id' => $user_id,
+                'reviewer_name' => 'Admin', // Assuming admin is adding
+                'review_content' => $review_content,
+                'rating' => $rating,
+                'status' => 'approved',
+            ),
+            array(
+                '%d',
+                '%s',
+                '%s',
+                '%d',
+                '%s'
+            )
+        );
+
+        // Generate PDF from review content
+        $pdf_url = generate_product_pdf_from_person_review($name, $review_content, $rating);
+
+        // Create downloadable product in WooCommerce with the PDF URL
+        $product_id = create_or_update_downloadable_product($name, $pdf_url);
+
+        // Update user with the product ID
+        $wpdb->update(
+            "{$wpdb->prefix}urp_custom_users",
+            array('product_id' => $product_id),
+            array('id' => $user_id),
+            array('%d'),
+            array('%d')
+        );
+    }
+    echo '<div class="notice notice-success is-dismissible"><p>Users added successfully from Excel file.</p></div>';
 }

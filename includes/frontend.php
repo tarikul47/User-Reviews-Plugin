@@ -33,6 +33,7 @@ function urp_user_list_shortcode()
 add_shortcode('urp_user_list', 'urp_user_list_shortcode');
 
 
+
 // Shortcode to display single user details
 function urp_single_user_shortcode()
 {
