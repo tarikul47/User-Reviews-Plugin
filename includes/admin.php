@@ -28,12 +28,26 @@ function urp_user_list_page()
         $wpdb->delete("{$wpdb->prefix}urp_custom_users", array('id' => $user_id), array('%d'));
         $wpdb->delete("{$wpdb->prefix}urp_custom_reviews", array('user_id' => $user_id), array('%d'));
 
-        // Check if product ID is valid and delete the product
+        // Check if product ID is valid
         if ($product_id) {
-            wp_delete_post($product_id, true); // Force delete the product
+            $product = wc_get_product($product_id);
+            if ($product) {
+                // Get all downloadable files for the product
+                $downloads = $product->get_downloads();
+                foreach ($downloads as $download) {
+                    // Delete the actual file from the server
+                    $file_path = str_replace(wp_get_upload_dir()['baseurl'], wp_get_upload_dir()['basedir'], $download['file']);
+                    if (file_exists($file_path)) {
+                        unlink($file_path);
+                    }
+                }
+            }
+
+            // Force delete the product
+            wp_delete_post($product_id, true);
         }
 
-        echo '<div class="updated"><p>User, related reviews, and associated product deleted successfully!</p></div>';
+        echo '<div class="updated"><p>User, related reviews, and associated product and PDF file(s) deleted successfully!</p></div>';
     }
 
     // Query to get users along with their total, approved, and pending review counts
@@ -339,8 +353,6 @@ function approve_review_and_update_pdf($review_id)
             array('%s'),
             array('%d')
         );
-
-        echo '<div class="notice notice-success is-dismissible"><p>Review approved successfully!</p></div>';
 
         // Fetch user name and product ID
         $user = $wpdb->get_row($wpdb->prepare("SELECT name, product_id FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $review->user_id));
