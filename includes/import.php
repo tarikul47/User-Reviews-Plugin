@@ -7,6 +7,7 @@ function urp_import_users_page_async()
         <h2>Import Users</h2>
         <form id="urp-import-form" method="post" enctype="multipart/form-data">
             <input type="file" name="user_file" required>
+            <input type="hidden" name="total_chunks" id="total_chunks" value="">
             <input type="submit" name="upload_file" class="button button-primary" value="Upload">
         </form>
         <div id="import-progress-container" style="display:none;">
@@ -17,6 +18,7 @@ function urp_import_users_page_async()
     </div>
     <?php
 }
+
 
 
 function urp_handle_file_upload_async()
@@ -162,6 +164,7 @@ function urp_process_chunks_async()
     check_ajax_referer('urp_import_nonce', 'security');
 
     $queue = get_option('urp_import_queue', []);
+    $total_chunks = count($queue) + 1; // Include the current chunk being processed
 
     if (empty($queue)) {
         wp_send_json_success('Import completed.');
@@ -217,7 +220,8 @@ function urp_process_chunks_async()
             wp_send_json_success(
                 array(
                     'remaining' => count($queue),
-                    'completed' => $chunk_key
+                    'completed' => $chunk_key,
+                    'total_chunks' => $total_chunks
                 )
             );
         } else {
@@ -225,6 +229,7 @@ function urp_process_chunks_async()
         }
     }
 }
+
 add_action('wp_ajax_urp_process_chunks_async', 'urp_process_chunks_async');
 
 

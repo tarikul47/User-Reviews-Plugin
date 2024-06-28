@@ -24,6 +24,8 @@ jQuery(document).ready(function ($) {
   });
 
   function processChunks() {
+    var totalChunks = $("#total_chunks").val();
+
     $.ajax({
       url: urp_import.ajax_url,
       type: "POST",
@@ -34,9 +36,10 @@ jQuery(document).ready(function ($) {
       success: function (response) {
         console.log("response", response);
         if (response.success) {
-          var totalChunks = $('input[name="total_chunks"]').val();
-         
-          console.log("totalChunks", totalChunks);
+          if (totalChunks == 0) {
+            totalChunks = response.data.total_chunks; // Set totalChunks if not already set
+            $("#total_chunks").val(totalChunks); // Save it for future use
+          }
           var remainingChunks = response.data.remaining;
           console.log("remainingChunks", remainingChunks);
           var progress = ((totalChunks - remainingChunks) / totalChunks) * 100;
