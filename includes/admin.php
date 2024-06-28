@@ -100,7 +100,7 @@ function urp_user_list_page()
 
     // Display the user list in a table
     echo '<div class="wrap">';
-    echo '<h2>User List</h2>';
+    echo '<h2>User List - ' . count($users) . '</h2>';
     echo '<form method="post" action="">';
     echo '<table class="wp-list-table widefat fixed striped">';
     echo '<thead><tr><th><input type="checkbox" id="select-all"></th><th>ID</th><th>Name</th><th>Email</th><th>Total Reviews</th><th>Approved Reviews</th><th>Pending Reviews</th><th>Actions</th><th>View Reviews</th></tr></thead><tbody>';

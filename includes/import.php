@@ -50,7 +50,7 @@ add_action('wp_ajax_urp_handle_file_upload_async', 'urp_handle_file_upload_async
 function urp_process_file_async($file_path, $file_type)
 {
     $chunks = [];
-    $chunk_size = 3;
+    $chunk_size = 100;
 
     // Clear the queue before starting to process the file
     update_option('urp_import_queue', []);
@@ -183,11 +183,32 @@ function urp_process_chunks_async()
                 $review_content = sanitize_textarea_field($row[2]);
                 $rating = intval($row[3]);
 
+
+                $content = '<h1>Reviews for ' . $name . '</h1>';
+                $content .= '<h2>Review by ' . esc_html(wp_get_current_user()->display_name) . '</h2>';
+                $content .= '<p>Review Content: ' . esc_html($review_content) . '</p>';
+                $content .= '<p>Rating: ' . esc_html($rating) . '</p>';
+                $content .= '<hr>';
+
+                // Generate PDF from review content
+                $pdf_url = generate_product_pdf_from_person_review($name, $content);
+
+                // Create downloadable product in WooCommerce
+                $product_id = create_or_update_downloadable_product($name, $pdf_url);
+
                 // Insert user into the database
                 $wpdb->insert(
                     "{$wpdb->prefix}urp_custom_users",
-                    array('name' => $name, 'email' => $email),
-                    array('%s', '%s')
+                    array(
+                        'name' => $name,
+                        'email' => $email,
+                        'product_id' => $product_id,
+                    ),
+                    array(
+                        '%s',
+                        '%s',
+                        '%d',
+                    )
                 );
 
                 $user_id = $wpdb->insert_id;
@@ -204,15 +225,6 @@ function urp_process_chunks_async()
                     ),
                     array('%d', '%s', '%s', '%d', '%s')
                 );
-
-                $content = '<h1>Reviews for ' . $name . '</h1>';
-                $content .= '<h2>Review by ' . esc_html(wp_get_current_user()->display_name) . '</h2>';
-                $content .= '<p>Review Content: ' . esc_html($review_content) . '</p>';
-                $content .= '<p>Rating: ' . esc_html($rating) . '</p>';
-                $content .= '<hr>';
-
-                $pdf_url = generate_product_pdf_from_person_review($name, $content);
-                create_or_update_downloadable_product($name, $pdf_url);
             }
 
             update_option('urp_import_queue', $queue);
