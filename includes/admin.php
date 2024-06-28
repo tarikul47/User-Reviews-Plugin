@@ -8,17 +8,18 @@ function urp_admin_menu()
     add_submenu_page('user-reviews-plugin', 'Review List', 'Review List', 'manage_options', 'user-reviews-plugin-review-list', 'urp_review_list_page');
     add_submenu_page('user-reviews-plugin', 'Pending Reviews', 'Pending Reviews', 'manage_options', 'user-reviews-plugin-approve-reviews', 'urp_approve_reviews_page');
     add_submenu_page('user-reviews-plugin', 'Import Users', 'Import Users', 'manage_options', 'user-reviews-plugin-import-users', 'urp_import_users_page');
+    add_submenu_page('user-reviews-plugin', 'Import Users Async', 'Import Users Async', 'manage_options', 'user-reviews-plugin-import-users_async', 'urp_import_users_page_async');
     add_submenu_page('user-reviews-plugin', 'Edit User', '', 'manage_options', 'edit_user', 'urp_edit_user_page');
     add_submenu_page('user-reviews-plugin', 'User Reviews', '', 'manage_options', 'user_reviews', 'urp_user_reviews_page');
 }
 add_action('admin_menu', 'urp_admin_menu');
 
-// Function to display user list page
+// Function to display user list page with bulk delete option
 function urp_user_list_page()
 {
     global $wpdb;
 
-    // Handle deletion of a user
+    // Handle single user deletion
     if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['user_id'])) {
         $user_id = intval($_GET['user_id']);
 
@@ -51,6 +52,41 @@ function urp_user_list_page()
         echo '<div class="updated"><p>User, related reviews, and associated product and PDF file(s) deleted successfully!</p></div>';
     }
 
+    // Handle bulk delete action
+    if (isset($_POST['bulk_delete_users']) && !empty($_POST['user_ids'])) {
+        $user_ids = array_map('intval', $_POST['user_ids']);
+
+        foreach ($user_ids as $user_id) {
+            // Fetch the product ID related to the user
+            $product_id = $wpdb->get_var($wpdb->prepare("SELECT product_id FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $user_id));
+
+            // Delete user, reviews, and product
+            $wpdb->delete("{$wpdb->prefix}urp_custom_users", array('id' => $user_id), array('%d'));
+            $wpdb->delete("{$wpdb->prefix}urp_custom_reviews", array('user_id' => $user_id), array('%d'));
+
+            // Check if product ID is valid
+            if ($product_id) {
+                $product = wc_get_product($product_id);
+                if ($product) {
+                    // Get all downloadable files for the product
+                    $downloads = $product->get_downloads();
+                    foreach ($downloads as $download) {
+                        // Delete the actual file from the server
+                        $file_path = str_replace(wp_get_upload_dir()['baseurl'], wp_get_upload_dir()['basedir'], $download['file']);
+                        if (file_exists($file_path)) {
+                            unlink($file_path);
+                        }
+                    }
+                }
+
+                // Force delete the product
+                wp_delete_post($product_id, true);
+            }
+        }
+
+        echo '<div class="updated"><p>Selected users, related reviews, and associated products and PDF files deleted successfully!</p></div>';
+    }
+
     // Query to get users along with their total, approved, and pending review counts
     $users = $wpdb->get_results("
         SELECT u.id, u.name, u.email,
@@ -65,11 +101,13 @@ function urp_user_list_page()
     // Display the user list in a table
     echo '<div class="wrap">';
     echo '<h2>User List</h2>';
+    echo '<form method="post" action="">';
     echo '<table class="wp-list-table widefat fixed striped">';
-    echo '<thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Total Reviews</th><th>Approved Reviews</th><th>Pending Reviews</th><th>Actions</th><th>View Reviews</th></tr></thead><tbody>';
+    echo '<thead><tr><th><input type="checkbox" id="select-all"></th><th>ID</th><th>Name</th><th>Email</th><th>Total Reviews</th><th>Approved Reviews</th><th>Pending Reviews</th><th>Actions</th><th>View Reviews</th></tr></thead><tbody>';
 
     foreach ($users as $user) {
         echo '<tr>';
+        echo '<td><input type="checkbox" name="user_ids[]" value="' . esc_attr($user->id) . '"></td>';
         echo '<td>' . esc_html($user->id) . '</td>';
         echo '<td>' . esc_html($user->name) . '</td>';
         echo '<td>' . esc_html($user->email) . '</td>';
@@ -87,8 +125,22 @@ function urp_user_list_page()
     }
 
     echo '</tbody></table>';
+    echo '<input type="submit" name="bulk_delete_users" class="button button-primary" value="Delete Selected Users and Related Data">';
+    echo '</form>';
     echo '</div>';
+    ?>
+
+    <script type="text/javascript">
+        document.getElementById('select-all').addEventListener('click', function (event) {
+            const checkboxes = document.querySelectorAll('input[name="user_ids[]"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = event.target.checked;
+            });
+        });
+    </script>
+    <?php
 }
+
 
 // Function to display the edit user page
 function urp_edit_user_page()
@@ -537,7 +589,7 @@ function handle_user_file_upload()
         if ($extension == 'csv') {
             process_csv_file($file);
         } elseif (in_array($extension, array('xls', 'xlsx'))) {
-          //  process_excel_file($file);
+            //  process_excel_file($file);
         } else {
             echo '<div class="notice notice-error is-dismissible"><p>Unsupported file type.</p></div>';
         }

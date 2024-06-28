@@ -17,6 +17,7 @@ define('URP_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include necessary files
 require_once URP_PLUGIN_DIR . 'includes/database.php';
+require_once URP_PLUGIN_DIR . 'includes/import.php';
 require_once URP_PLUGIN_DIR . 'includes/admin.php';
 require_once URP_PLUGIN_DIR . 'includes/frontend.php';
 
