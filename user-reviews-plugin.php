@@ -20,6 +20,7 @@ require_once URP_PLUGIN_DIR . 'includes/database.php';
 require_once URP_PLUGIN_DIR . 'includes/import.php';
 require_once URP_PLUGIN_DIR . 'includes/admin.php';
 require_once URP_PLUGIN_DIR . 'includes/frontend.php';
+require_once URP_PLUGIN_DIR . 'includes/mail.php';
 
 // Activation hook to create database tables
 register_activation_hook(__FILE__, 'urp_create_custom_tables');

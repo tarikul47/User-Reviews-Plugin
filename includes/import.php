@@ -143,8 +143,6 @@ function urp_enqueue_chunk($chunk)
 }
 
 
-
-
 function urp_enqueue_import_scripts()
 {
     wp_enqueue_script('urp-import-script', plugins_url('../js/import.js', __FILE__), array('jquery'), '1.0', true);
@@ -225,6 +223,13 @@ function urp_process_chunks_async()
                     ),
                     array('%d', '%s', '%s', '%d', '%s')
                 );
+
+
+                // Queue email notification for the user
+                // Enqueue email for the user
+                $subject = 'Hurrah! A Review is live!';
+                $message = 'Hello ' . $name . ',<br>One of a review is now live. You can check it.';
+                urp_enqueue_email($email, $subject, $message);
             }
 
             update_option('urp_import_queue', $queue);

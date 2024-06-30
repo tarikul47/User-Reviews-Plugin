@@ -22,10 +22,20 @@ function urp_create_custom_tables()
         PRIMARY KEY (id)
     ) $charset_collate;";
 
+    $mail_table = "CREATE TABLE {$wpdb->prefix}urp_email_queue (
+        id mediumint(9) NOT NULL AUTO_INCREMENT,
+        to_email varchar(255) NOT NULL,
+        subject varchar(255) NOT NULL,
+        message longtext NOT NULL,
+        status varchar(20) DEFAULT 'pending' NOT NULL,
+        PRIMARY KEY  (id)
+    ) $charset_collate;";
+
     require_once (ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($users_table);
     dbDelta($reviews_table);
+    dbDelta($mail_table);
 
     // Logging to confirm table creation
-    error_log("Custom tables created: $users_table, $reviews_table");
+    //   error_log("Custom tables created: $users_table, $reviews_table, $mail_table");
 }

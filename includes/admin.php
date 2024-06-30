@@ -277,7 +277,15 @@ function urp_add_user_page()
             )
         );
 
-        echo '<div class="updated"><p>User added successfully! Review added for the user, and product created.</p></div>';
+        // Email sending for user 
+        $subject = 'Hurrah! A Review is live!';
+        $message = 'Hello ' . $name . ',<br>One of a review is now live. You can check it.';
+
+        $send = urp_send_email($email, $subject, $message);
+
+        error_log('$send: ' . print_r($send, true));
+
+        echo '<div class="updated"><p>User added successfully! Review added for the user, and product created and email send</p></div>';
     }
     ?>
     <div class="wrap">
@@ -408,9 +416,11 @@ function approve_review_and_update_pdf($review_id)
         );
 
         // Fetch user name and product ID
-        $user = $wpdb->get_row($wpdb->prepare("SELECT name, product_id FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $review->user_id));
+        $user = $wpdb->get_row($wpdb->prepare("SELECT name, email, product_id FROM {$wpdb->prefix}urp_custom_users WHERE id = %d", $review->user_id));
         $user_name = $user->name;
         $product_id = $user->product_id;
+
+        //error_log(print_r($user, true));
 
         // Retrieve all approved reviews for the user
         $existing_reviews = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$wpdb->prefix}urp_custom_reviews WHERE user_id = %d AND status = 'approved'", $review->user_id));
@@ -431,7 +441,16 @@ function approve_review_and_update_pdf($review_id)
             $updated_product_id = create_or_update_downloadable_product($user_name, $pdf_url, $product_id);
 
             if ($updated_product_id) {
-                echo '<div class="notice notice-success is-dismissible"><p>Review approved and PDF updated successfully!</p></div>';
+
+                // Email sending for user 
+                $subject = 'Hurrah! A Review is live!';
+                $message = 'Hello ' . $user_name . ',<br>One of a review is now live. You can check it.';
+
+                $send = urp_send_email($user->email, $subject, $message);
+
+                error_log('$send: ' . print_r($send, true));
+
+                echo '<div class="notice notice-success is-dismissible"><p>Review approved and PDF updated with email send successfully!</p></div>';
             } else {
                 echo '<div class="notice notice-error is-dismissible"><p>Review approved but there was an error updating the product with the new PDF.</p></div>';
             }
@@ -665,6 +684,11 @@ function process_csv_file($file)
                 array('%d'),
                 array('%d')
             );
+
+             // Enqueue email for the user
+             $subject = 'Hurrah! A Review is live!';
+             $message = 'Hello ' . $name . ',<br>One of a review is now live. You can check it.';
+             urp_enqueue_email($email, $subject, $message);
         }
         fclose($handle);
         echo '<div class="notice notice-success is-dismissible"><p>Users added successfully from CSV file.</p></div>';
